@@ -1,3 +1,4 @@
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .routers import upload, calculate
@@ -8,10 +9,15 @@ app = FastAPI(
     version="1.0.0",
 )
 
+# Allow all origins in production (Vercel preview URLs are dynamic)
+# In tighter environments, replace with explicit allowed origins
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*")
+origins = [o.strip() for o in ALLOWED_ORIGINS.split(",")] if ALLOWED_ORIGINS != "*" else ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
-    allow_credentials=True,
+    allow_origins=origins,
+    allow_credentials=False,   # Must be False when allow_origins=["*"]
     allow_methods=["*"],
     allow_headers=["*"],
 )
