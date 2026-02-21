@@ -3,5 +3,10 @@
   "outputDirectory": ".next",
   "installCommand": "npm install",
   "framework": "nextjs",
-  "regions": ["bom1"]
+  "regions": ["bom1"],
+  "git": {
+    "deploymentEnabled": {
+      "main": true
+    }
+  }
 }
