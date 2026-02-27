@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal
 from enum import Enum
 
 
@@ -80,6 +80,16 @@ class CashFlow(BaseModel):
     closing_cash: Optional[float] = None
 
 
+class MonthlyBudget(BaseModel):
+    """Stub — will be populated when monthly budget feature is built."""
+    month: Optional[str] = None
+    revenue_budget: Optional[float] = None
+    expense_budget: Optional[float] = None
+    actual_revenue: Optional[float] = None
+    actual_expense: Optional[float] = None
+    variance_note: Optional[str] = None
+
+
 class FinancialStatement(BaseModel):
     company_name: Optional[str] = "Your Company"
     financial_year: Optional[str] = "FY 2024-25"
@@ -89,6 +99,7 @@ class FinancialStatement(BaseModel):
     cash_flow: Optional[CashFlow] = None
     roc_filed: Optional[bool] = None
     ibc_overdue_amount: Optional[float] = None
+    budget: Optional[MonthlyBudget] = None
 
 
 class Recommendation(BaseModel):
@@ -202,3 +213,14 @@ class ParsedFileResponse(BaseModel):
     mapping_suggestions: Dict[str, str]
     financial_year: Optional[str] = None
     currency_unit: Optional[str] = None
+
+
+class ChatMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
+
+class ChatRequest(BaseModel):
+    messages: List[ChatMessage]
+    statement: Optional["FinancialStatement"] = None
+    provider: str = "auto"   # "auto" | "claude" | "openai"
