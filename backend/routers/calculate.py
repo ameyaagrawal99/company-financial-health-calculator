@@ -98,16 +98,24 @@ async def export_excel(stmt: FinancialStatement):
 @router.post("/ai-analysis")
 async def ai_analysis(
     stmt: FinancialStatement,
-    x_openai_key: Optional[str] = Header(None, alias="X-OpenAI-Key"),
+    x_openai_key: Optional[str] = Header(default=None),
+    x_claude_key: Optional[str] = Header(default=None),
+    x_provider: Optional[str] = Header(default="auto"),
 ):
     """
-    Generate AI-powered CFO-grade narrative analysis using GPT-4o.
-    Pass your OpenAI API key in the X-OpenAI-Key header, or set OPENAI_API_KEY env var.
+    Generate AI-powered CFO-grade narrative analysis.
+    Optionally pass your OpenAI API key in X-OpenAI-Key header,
+    Claude API key in X-Claude-Key header, and preferred provider
+    in X-Provider header (openai | claude | auto). Falls back to env vars.
     """
     try:
         report = _build_report(stmt)
-        # Use header key first, then fall back to env var
-        result = await generate_ai_analysis(report, api_key=x_openai_key)
+        result = await generate_ai_analysis(
+            report,
+            claude_key=x_claude_key,
+            openai_key=x_openai_key,
+            provider=x_provider or "auto",
+        )
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI analysis error: {str(e)}")
