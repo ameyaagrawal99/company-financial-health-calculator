@@ -81,7 +81,7 @@ class CashFlow(BaseModel):
 
 
 class MonthlyBudget(BaseModel):
-    """Stub — will be populated when monthly budget feature is built."""
+    """Monthly budget actuals and targets for a single calendar month."""
     month: Optional[str] = None
     revenue_budget: Optional[float] = None
     expense_budget: Optional[float] = None
@@ -222,5 +222,5 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: List[ChatMessage]
-    statement: Optional["FinancialStatement"] = None
+    statement: Optional[FinancialStatement] = None
     provider: str = "auto"   # "auto" | "claude" | "openai"
