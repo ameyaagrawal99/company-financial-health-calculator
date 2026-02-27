@@ -1,28 +1,45 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, Header, HTTPException
+from typing import Optional
 from ..services.excel_parser import parse_excel_file
+from ..services.pdf_parser import parse_pdf_file
 from ..models.schemas import ParsedFileResponse
 
 router = APIRouter(prefix="/api", tags=["upload"])
 
-ALLOWED_EXTENSIONS = {'.xlsx', '.xls', '.csv'}
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+ALLOWED_EXTENSIONS = {'.xlsx', '.xls', '.csv', '.pdf'}
+MAX_FILE_SIZE = 20 * 1024 * 1024  # 20MB (PDFs can be larger)
 
 
 @router.post("/upload", response_model=ParsedFileResponse)
-async def upload_file(file: UploadFile = File(...)):
-    """Upload financial statement file and get parsing results with mapping suggestions."""
-    # Validate file
+async def upload_file(
+    file: UploadFile = File(...),
+    x_claude_key: Optional[str] = Header(default=None),
+    x_openai_key: Optional[str] = Header(default=None),
+):
+    """Upload financial statement (Excel/CSV/PDF) and return parsed data."""
     filename = file.filename or ""
     ext = '.' + filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
+
     if ext not in ALLOWED_EXTENSIONS:
-        raise HTTPException(status_code=400, detail=f"File type '{ext}' not supported. Use .xlsx, .xls, or .csv")
+        raise HTTPException(
+            status_code=400,
+            detail=f"File type '{ext}' not supported. Use .xlsx, .xls, .csv, or .pdf"
+        )
 
     file_bytes = await file.read()
     if len(file_bytes) > MAX_FILE_SIZE:
-        raise HTTPException(status_code=413, detail="File too large. Maximum size is 10MB.")
+        raise HTTPException(status_code=413, detail="File too large. Maximum size is 20MB.")
 
     try:
-        result = parse_excel_file(file_bytes, filename)
+        if ext == '.pdf':
+            result = await parse_pdf_file(
+                file_bytes, filename,
+                claude_key=x_claude_key,
+                openai_key=x_openai_key,
+            )
+        else:
+            result = parse_excel_file(file_bytes, filename)
+
         return ParsedFileResponse(
             sheets=result["sheets"],
             detected_type=result["detected_type"],
