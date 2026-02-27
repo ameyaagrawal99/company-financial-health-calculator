@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Upload, FileSpreadsheet, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { uploadFile } from '@/lib/api'
+import { AIKeys } from '@/lib/ai-keys'
 
 export default function HomePage() {
   const router = useRouter()
@@ -18,7 +19,7 @@ export default function HomePage() {
     setUploadState('uploading')
     setErrorMsg('')
     try {
-      const result = await uploadFile(files[0])
+      const result = await uploadFile(files[0], AIKeys.getHeaders())
       setParsedData(result)
       setUploadState('success')
     } catch (err: any) {
@@ -29,7 +30,12 @@ export default function HomePage() {
 
   const { getRootProps, getInputProps, isDragActive, acceptedFiles } = useDropzone({
     onDrop,
-    accept: { 'application/vnd.ms-excel': ['.xls'], 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'], 'text/csv': ['.csv'] },
+    accept: {
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+      'application/vnd.ms-excel': ['.xls'],
+      'text/csv': ['.csv'],
+      'application/pdf': ['.pdf'],
+    },
     maxSize: 10 * 1024 * 1024,
     multiple: false,
   })
@@ -137,10 +143,14 @@ export default function HomePage() {
                 <div style={{ fontWeight: 600, fontSize: 16, color: '#1C1917', marginBottom: 8 }}>
                   {isDragActive ? 'Drop your file here' : 'Drop your financial statement here'}
                 </div>
-                <div style={{ fontSize: 13, color: '#6B6560', marginBottom: 20 }}>
+                <div style={{ fontSize: 13, color: '#6B6560', marginBottom: 4 }}>
                   Supports .xlsx, .xls, .csv · Max 10MB · Balance Sheet, P&L, or Cash Flow
                 </div>
-                <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+                <p className="text-xs text-gray-400 mt-1">
+                  Supports Excel (.xlsx/.xls), CSV, and PDF (digital or scanned).{' '}
+                  PDF parsing uses AI — add your API key in AI Settings.
+                </p>
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap', marginTop: 16 }}>
                   {['Schedule III', 'Tally Export', 'Manual Excel', 'MCA XBRL'].map(f => (
                     <span key={f} style={{ background: '#F8F7F4', border: '1px solid #E4E2DC', borderRadius: 6, padding: '3px 10px', fontSize: 11, color: '#6B6560' }}>
                       {f}
