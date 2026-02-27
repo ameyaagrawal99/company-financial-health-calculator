@@ -2,10 +2,17 @@ import { FinancialStatement, FinancialHealthReport } from './types'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
-export async function uploadFile(file: File): Promise<any> {
+export async function uploadFile(
+  file: File,
+  aiHeaders: Record<string, string> = {}
+): Promise<any> {
   const formData = new FormData()
   formData.append('file', file)
-  const res = await fetch(`${API_URL}/api/upload`, { method: 'POST', body: formData })
+  const res = await fetch(`${API_URL}/api/upload`, {
+    method: 'POST',
+    headers: aiHeaders,   // Let browser set Content-Type for multipart
+    body: formData,
+  })
   if (!res.ok) {
     const err = await res.json()
     throw new Error(err.detail || 'Upload failed')
@@ -52,22 +59,20 @@ export function triggerDownload(blob: Blob, filename: string) {
 
 export async function getAIAnalysis(
   stmt: FinancialStatement,
-  openaiKey?: string
+  aiHeaders: Record<string, string> = {}
 ): Promise<{
   available: boolean
   error: string | null
   analysis: string | null
   model?: string
+  provider?: string
   tokens_used?: number
   health_score?: number
   score_band?: string
 }> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-  if (openaiKey) headers['X-OpenAI-Key'] = openaiKey
-
   const res = await fetch(`${API_URL}/api/ai-analysis`, {
     method: 'POST',
-    headers,
+    headers: { 'Content-Type': 'application/json', ...aiHeaders },
     body: JSON.stringify(stmt),
   })
   if (!res.ok) {
@@ -75,4 +80,66 @@ export async function getAIAnalysis(
     throw new Error(err.detail || 'AI analysis failed')
   }
   return res.json()
+}
+
+export interface ChatStreamOptions {
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>
+  statement?: FinancialStatement
+  aiHeaders: Record<string, string>
+  onChunk: (text: string) => void
+  onDone: () => void
+  onError: (error: string) => void
+  signal?: AbortSignal
+}
+
+export async function streamChat(options: ChatStreamOptions): Promise<void> {
+  const { messages, statement, aiHeaders, onChunk, onDone, onError, signal } = options
+
+  const res = await fetch(`${API_URL}/api/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...aiHeaders },
+    body: JSON.stringify({
+      messages,
+      statement: statement ?? null,
+      provider: aiHeaders['X-Provider'] || 'auto',
+    }),
+    signal,
+  })
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Chat failed' }))
+    onError(err.detail || 'Chat request failed')
+    return
+  }
+
+  const reader = res.body?.getReader()
+  if (!reader) { onError('No response body'); return }
+
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() ?? ''  // Keep incomplete line in buffer
+
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue
+      const jsonStr = line.slice(6).trim()
+      if (!jsonStr) continue
+
+      try {
+        const event = JSON.parse(jsonStr)
+        if (event.error) { onError(event.error); return }
+        if (event.text) onChunk(event.text)
+        if (event.done) { onDone(); return }
+      } catch {
+        // Malformed SSE line — skip
+      }
+    }
+  }
+  onDone()
 }
