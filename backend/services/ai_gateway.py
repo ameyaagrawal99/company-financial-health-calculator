@@ -2,6 +2,8 @@
 Unified AI Gateway — wraps both Anthropic Claude and OpenAI GPT-4o behind one interface.
 Handles analysis, streaming chat, and vision-based PDF extraction.
 """
+import base64
+import json
 import os
 import re
 from pathlib import Path
@@ -160,7 +162,11 @@ class AIGateway:
         provider: str = "auto",
     ) -> AsyncIterator[str]:
         """Yield text chunks for streaming chat. Each chunk is a plain string."""
-        resolved = _resolve_provider(provider, self.claude_key, self.openai_key)
+        try:
+            resolved = _resolve_provider(provider, self.claude_key, self.openai_key)
+        except ValueError as e:
+            yield f"[ERROR] {_friendly_error(str(e), provider)}"
+            return
 
         # Build system prompt with financial context injected
         skill_template = _load_skill("chat_consultant")
@@ -210,37 +216,41 @@ class AIGateway:
 
     async def extract_pdf_native_claude(self, pdf_bytes: bytes) -> str:
         """Use Claude's native PDF API (beta) — no image conversion needed."""
-        import anthropic
-        import base64
+        if not self.claude_key:
+            raise ValueError("Claude API key required for native PDF extraction.")
+        try:
+            import anthropic
 
-        client = anthropic.AsyncAnthropic(api_key=self.claude_key)
-        response = await client.beta.messages.create(
-            model="claude-3-5-sonnet-20241022",
-            max_tokens=4096,
-            betas=["pdfs-2024-09-25"],
-            messages=[{
-                "role": "user",
-                "content": [
-                    {
-                        "type": "document",
-                        "source": {
-                            "type": "base64",
-                            "media_type": "application/pdf",
-                            "data": base64.standard_b64encode(pdf_bytes).decode("utf-8"),
+            client = anthropic.AsyncAnthropic(api_key=self.claude_key)
+            response = await client.beta.messages.create(
+                model="claude-3-5-sonnet-20241022",
+                max_tokens=4096,
+                betas=["pdfs-2024-09-25"],
+                messages=[{
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "document",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "application/pdf",
+                                "data": base64.standard_b64encode(pdf_bytes).decode("utf-8"),
+                            },
                         },
-                    },
-                    {
-                        "type": "text",
-                        "text": (
-                            "Extract ALL financial line items and values from this financial statement. "
-                            "Return structured text: 'Line Item: Value' per line. "
-                            "Preserve section headers (Balance Sheet / P&L / Cash Flow)."
-                        ),
-                    },
-                ],
-            }],
-        )
-        return response.content[0].text
+                        {
+                            "type": "text",
+                            "text": (
+                                "Extract ALL financial line items and values from this financial statement. "
+                                "Return structured text: 'Line Item: Value' per line. "
+                                "Preserve section headers (Balance Sheet / P&L / Cash Flow)."
+                            ),
+                        },
+                    ],
+                }],
+            )
+            return response.content[0].text
+        except Exception as e:
+            raise ValueError(_friendly_error(str(e), "claude")) from e
 
     async def map_text_to_schema(
         self, extracted_text: str, provider: str = "auto"
@@ -299,11 +309,13 @@ Map the extracted text to this JSON structure (all values in same currency unit 
         else:
             raw = await self._openai_complete(user_msg, system=system, max_tokens=2000)
 
-        import json
         # Strip possible markdown fences before parsing
         raw = re.sub(r"^```[a-z]*\n?", "", raw.strip(), flags=re.MULTILINE)
         raw = re.sub(r"\n?```$", "", raw.strip(), flags=re.MULTILINE)
-        return json.loads(raw.strip())
+        try:
+            return json.loads(raw.strip())
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"AI returned invalid JSON: {exc}") from exc
 
     # ------------------------------------------------------------------ #
     #  Private: Claude calls                                               #
@@ -338,7 +350,6 @@ Map the extracted text to this JSON structure (all values in same currency unit 
 
     async def _claude_vision(self, image_bytes_list: list[bytes], prompt: str) -> str:
         import anthropic
-        import base64
         client = anthropic.AsyncAnthropic(api_key=self.claude_key)
         content = []
         for img_bytes in image_bytes_list[:12]:  # Max 12 pages
@@ -351,7 +362,7 @@ Map the extracted text to this JSON structure (all values in same currency unit 
                 },
             })
         content.append({"type": "text", "text": prompt})
-        response = await anthropic.AsyncAnthropic(api_key=self.claude_key).messages.create(
+        response = await client.messages.create(
             model="claude-3-5-sonnet-20241022",
             max_tokens=4096,
             messages=[{"role": "user", "content": content}],
@@ -376,7 +387,7 @@ Map the extracted text to this JSON structure (all values in same currency unit 
                 {"role": "user", "content": user_msg},
             ],
         )
-        return response.choices[0].message.content
+        return response.choices[0].message.content or ""
 
     async def _openai_stream(
         self, messages: list, system: str = ""
@@ -399,7 +410,6 @@ Map the extracted text to this JSON structure (all values in same currency unit 
                 yield delta
 
     async def _openai_vision(self, image_bytes_list: list[bytes], prompt: str) -> str:
-        import base64
         from openai import AsyncOpenAI
         client = AsyncOpenAI(api_key=self.openai_key)
         content = [{"type": "text", "text": prompt}]
@@ -414,4 +424,4 @@ Map the extracted text to this JSON structure (all values in same currency unit 
             max_tokens=4096,
             messages=[{"role": "user", "content": content}],
         )
-        return response.choices[0].message.content
+        return response.choices[0].message.content or ""
