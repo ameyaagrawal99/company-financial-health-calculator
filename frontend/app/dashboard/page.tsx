@@ -1,13 +1,18 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import dynamic from 'next/dynamic'
 import { useAppStore } from '@/lib/store'
 import HealthScoreWidget from '@/components/dashboard/HealthScoreWidget'
 import SectionCard from '@/components/dashboard/SectionCard'
 import { formatCurrency, formatPct, formatX, formatDays } from '@/lib/formatters'
 import { FinancialHealthReport } from '@/lib/types'
 import { exportExcel, triggerDownload, getAIAnalysis } from '@/lib/api'
-import { Download, FileSpreadsheet, RefreshCw, Sparkles, X, Key, ChevronDown, ChevronUp } from 'lucide-react'
+import { AIKeys } from '@/lib/ai-keys'
+import { Download, FileSpreadsheet, RefreshCw, Sparkles, X, Key, ChevronDown, ChevronUp, Settings } from 'lucide-react'
+
+const ChatPanel = dynamic(() => import('@/components/chat/ChatPanel'), { ssr: false })
+const AISettingsModal = dynamic(() => import('@/components/chat/AISettingsModal'), { ssr: false })
 
 function buildSectionCards(report: FinancialHealthReport) {
   const r = report.ratios
@@ -156,6 +161,10 @@ export default function DashboardPage() {
   const [showKeyInput, setShowKeyInput] = useState(false)
   const [apiKey, setApiKey] = useState('')
 
+  // CFO Chat + AI Settings
+  const [showChat, setShowChat] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
+
   const handleExport = async () => {
     if (!statement) return
     setExporting(true)
@@ -185,7 +194,7 @@ export default function DashboardPage() {
     setAiError(null)
     try {
       if (typeof window !== 'undefined') localStorage.setItem('openai_key', key)
-      const res = await getAIAnalysis(statement, key)
+      const res = await getAIAnalysis(statement, AIKeys.getHeaders())
       if (res.available && res.analysis) {
         setAiResult(res.analysis)
         setAiTokens(res.tokens_used || null)
@@ -247,6 +256,21 @@ export default function DashboardPage() {
           >
             <Sparkles size={15} />
             AI Analysis
+          </button>
+          {/* AI Settings button */}
+          <button
+            onClick={() => setShowSettings(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+          >
+            <Settings className="w-4 h-4" />
+            AI Settings
+          </button>
+          {/* CFO Chat toggle */}
+          <button
+            onClick={() => setShowChat(v => !v)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${showChat ? 'bg-blue-600 text-white' : 'border border-blue-200 text-blue-600 hover:bg-blue-50'}`}
+          >
+            CFO Chat {showChat ? '▲' : '▼'}
           </button>
           <button
             onClick={handleExport}
@@ -403,6 +427,20 @@ export default function DashboardPage() {
           {exporting ? 'Building...' : 'Download .xlsx'}
         </button>
       </div>
+
+      {/* CFO Chat Panel — floating bottom-right */}
+      {showChat && (
+        <div className="fixed right-4 bottom-4 w-96 h-[560px] z-40 shadow-2xl rounded-xl">
+          <ChatPanel
+            statement={statement}
+            companyName={report?.company_name ?? ''}
+            financialYear={report?.financial_year ?? ''}
+          />
+        </div>
+      )}
+
+      {/* AI Settings Modal */}
+      <AISettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} />
     </div>
   )
 }
