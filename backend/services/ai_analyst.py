@@ -1,11 +1,11 @@
 """
-AI-powered financial analyst using OpenAI GPT-4.
-Provides plain-English narrative analysis, CFO-style commentary,
-red flag detection, and India-specific strategic advice.
+AI-powered financial analyst — thin wrapper around AIGateway.
+The _build_prompt function is kept here and imported by AIGateway.
 """
 import os
 from typing import Optional
 from ..models.schemas import FinancialHealthReport
+from .ai_gateway import AIGateway
 
 
 def _build_prompt(report: FinancialHealthReport) -> str:
@@ -129,77 +129,17 @@ Keep the tone professional but accessible — as if presenting to a board of dir
 
 async def generate_ai_analysis(
     report: FinancialHealthReport,
-    api_key: Optional[str] = None
+    api_key: Optional[str] = None,
+    claude_key: Optional[str] = None,
+    openai_key: Optional[str] = None,
+    provider: str = "auto",
 ) -> dict:
     """
-    Generate AI-powered financial analysis using OpenAI GPT-4.
-    Returns structured analysis sections.
+    Generate AI analysis. Delegates to AIGateway.
+    Backward-compatible: old 'api_key' param is treated as openai_key.
     """
-    key = api_key or os.getenv("OPENAI_API_KEY", "")
-    if not key:
-        return {
-            "available": False,
-            "error": "OpenAI API key not configured. Please set OPENAI_API_KEY in your environment.",
-            "analysis": None
-        }
+    effective_openai = openai_key or api_key or os.getenv("OPENAI_API_KEY", "")
+    effective_claude = claude_key or os.getenv("ANTHROPIC_API_KEY", "")
 
-    try:
-        # Lazy import so the app works without openai installed
-        from openai import AsyncOpenAI
-
-        client = AsyncOpenAI(api_key=key)
-        prompt = _build_prompt(report)
-
-        response = await client.chat.completions.create(
-            model="gpt-4o",          # Use GPT-4o for best quality + speed
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a senior CFO and financial analyst specializing in Indian businesses. "
-                        "Provide precise, quantitative, actionable analysis. "
-                        "Always reference Indian regulatory context (GST, Companies Act, RBI norms, Ind AS). "
-                        "Format your response with clear markdown headers and bullet points."
-                    )
-                },
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.3,         # Low temperature for factual financial analysis
-            max_tokens=3000,
-        )
-
-        analysis_text = response.choices[0].message.content
-        tokens_used = response.usage.total_tokens
-
-        return {
-            "available": True,
-            "error": None,
-            "analysis": analysis_text,
-            "model": "gpt-4o",
-            "tokens_used": tokens_used,
-            "company_name": report.company_name,
-            "financial_year": report.financial_year,
-            "health_score": report.health_score,
-            "score_band": report.score_band,
-        }
-
-    except ImportError:
-        return {
-            "available": False,
-            "error": "OpenAI package not installed. Run: pip install openai",
-            "analysis": None
-        }
-    except Exception as e:
-        error_msg = str(e)
-        # Provide helpful messages for common errors
-        if "invalid_api_key" in error_msg or "Incorrect API key" in error_msg:
-            error_msg = "Invalid OpenAI API key. Please check your key at platform.openai.com"
-        elif "insufficient_quota" in error_msg:
-            error_msg = "OpenAI quota exceeded. Please check your billing at platform.openai.com"
-        elif "rate_limit" in error_msg:
-            error_msg = "OpenAI rate limit hit. Please try again in a moment."
-        return {
-            "available": False,
-            "error": error_msg,
-            "analysis": None
-        }
+    gateway = AIGateway(claude_key=effective_claude, openai_key=effective_openai)
+    return await gateway.analyze(report, provider=provider)
