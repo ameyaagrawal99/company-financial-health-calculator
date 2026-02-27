@@ -7,6 +7,7 @@ Strategy:
   3. Else → pdf2image + vision API
   4. Map extracted text to FinancialStatement schema via AI
 """
+import asyncio
 import io
 from typing import Optional
 from .ai_gateway import AIGateway
@@ -44,9 +45,9 @@ def _pdf_to_images(pdf_bytes: bytes, max_pages: int = 12) -> list[bytes]:
     pil_images = convert_from_bytes(pdf_bytes, dpi=200, fmt="PNG")
     result = []
     for pil_img in pil_images[:max_pages]:
-        buf = io.BytesIO()
-        pil_img.save(buf, format="PNG")
-        result.append(buf.getvalue())
+        with io.BytesIO() as buf:
+            pil_img.save(buf, format="PNG")
+            result.append(buf.getvalue())
     return result
 
 
@@ -65,7 +66,7 @@ async def parse_pdf_file(
 
     # Step 1: Try digital text extraction
     try:
-        raw_text, page_count = _extract_digital_text(pdf_bytes)
+        raw_text, page_count = await asyncio.to_thread(_extract_digital_text, pdf_bytes)
     except Exception as e:
         raise ValueError(f"Could not read PDF file: {e}")
 
@@ -84,14 +85,14 @@ async def parse_pdf_file(
         try:
             extracted_text = await gateway.extract_pdf_native_claude(pdf_bytes)
             extraction_method = "claude_native_pdf"
-        except Exception:
+        except Exception:  # noqa: BLE001 — intentional: fall back to vision API
             # Native PDF API failed (e.g., beta not available) — fall back to vision
-            images = _pdf_to_images(pdf_bytes)
+            images = await asyncio.to_thread(_pdf_to_images, pdf_bytes)
             extracted_text = await gateway.extract_pdf_with_vision(images, provider="claude")
             extraction_method = "vision_claude"
     else:
         # OpenAI vision
-        images = _pdf_to_images(pdf_bytes)
+        images = await asyncio.to_thread(_pdf_to_images, pdf_bytes)
         extracted_text = await gateway.extract_pdf_with_vision(images, provider="openai")
         extraction_method = "vision_openai"
 
