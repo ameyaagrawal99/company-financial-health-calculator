@@ -49,6 +49,7 @@ async def upload_file(
             mapping_suggestions=result["mapping_suggestions"],
             financial_year=result.get("financial_year"),
             currency_unit=result.get("currency_unit"),
+            parsed_statement=result.get("parsed_statement"),
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))

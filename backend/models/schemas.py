@@ -213,6 +213,7 @@ class ParsedFileResponse(BaseModel):
     mapping_suggestions: Dict[str, str]
     financial_year: Optional[str] = None
     currency_unit: Optional[str] = None
+    parsed_statement: Optional[Dict[str, Any]] = None
 
 
 class ChatMessage(BaseModel):
