@@ -1,7 +1,7 @@
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from .routers import upload, calculate
+from .routers import upload, calculate, chat
 
 app = FastAPI(
     title="Company Financial Health Calculator API",
@@ -24,6 +24,7 @@ app.add_middleware(
 
 app.include_router(upload.router)
 app.include_router(calculate.router)
+app.include_router(chat.router)
 
 
 @app.get("/health")
