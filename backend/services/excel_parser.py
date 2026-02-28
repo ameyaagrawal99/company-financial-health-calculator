@@ -1,7 +1,8 @@
 """
 Excel/CSV parser with auto-detection of Indian financial statement formats.
 """
-import pandas as pd
+from __future__ import annotations  # Makes all annotations lazy strings — allows pd.DataFrame hints without top-level import
+
 import io
 import re
 from typing import Dict, List, Tuple, Any, Optional
@@ -150,6 +151,7 @@ def detect_financial_year(df: pd.DataFrame) -> Optional[str]:
 
 def parse_excel_file(file_bytes: bytes, filename: str) -> Dict[str, Any]:
     """Parse uploaded Excel or CSV file and return structured data."""
+    import pandas as pd  # Lazy import — keeps server startup fast (pandas + numpy are ~200ms on slow CPUs)
     try:
         fname_lower = filename.lower()
         if fname_lower.endswith('.csv'):
