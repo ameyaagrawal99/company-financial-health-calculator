@@ -42,7 +42,9 @@ def _pdf_to_images(pdf_bytes: bytes, max_pages: int = 12) -> list[bytes]:
     from pdf2image import convert_from_bytes
     from PIL import Image
 
-    pil_images = convert_from_bytes(pdf_bytes, dpi=200, fmt="PNG")
+    # 150 DPI is sufficient for financial table OCR and reduces image size ~44%
+    # vs 200 DPI, keeping vision-API token costs well within free-tier limits.
+    pil_images = convert_from_bytes(pdf_bytes, dpi=150, fmt="PNG")
     result = []
     for pil_img in pil_images[:max_pages]:
         with io.BytesIO() as buf:

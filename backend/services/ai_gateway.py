@@ -88,6 +88,14 @@ def _friendly_error(error_msg: str, provider: str) -> str:
         return f"Invalid {provider.title()} API key. Please check your key in AI Settings."
     if "quota" in error_msg or "billing" in error_msg:
         return f"{provider.title()} quota exceeded. Please check your billing dashboard."
+    # Token / context-size errors — e.g. OpenAI 429 "Request too large" or "tokens per min"
+    if "token" in error_msg.lower() and any(
+        kw in error_msg.lower() for kw in ("large", "limit", "exceeded", "maximum", "tpm", "context")
+    ):
+        return (
+            f"The PDF has too many pages for your {provider.title()} account's token limit. "
+            "Try a shorter document (2–3 pages), or switch to Claude which handles larger PDFs better."
+        )
     if "rate_limit" in error_msg or "rate limit" in error_msg:
         return "Rate limit hit. Please wait a moment and try again."
     if "overloaded" in error_msg:
@@ -222,10 +230,13 @@ class AIGateway:
             "If text is unclear, mark it with [UNCLEAR]."
         )
 
-        if resolved == "claude":
-            return await self._claude_vision(image_bytes_list, prompt)
-        else:
-            return await self._openai_vision(image_bytes_list, prompt)
+        try:
+            if resolved == "claude":
+                return await self._claude_vision(image_bytes_list, prompt)
+            else:
+                return await self._openai_vision(image_bytes_list, prompt)
+        except Exception as e:
+            raise ValueError(_friendly_error(str(e), resolved)) from e
 
     async def extract_pdf_native_claude(self, pdf_bytes: bytes) -> str:
         """Use Claude's native PDF API (beta) — no image conversion needed."""
@@ -317,10 +328,13 @@ Map the extracted text to this JSON structure (all values in same currency unit 
 """
         user_msg = f"{schema_hint}\n\nExtracted Text:\n{extracted_text}"
 
-        if resolved == "claude":
-            raw = await self._claude_complete(user_msg, system=system, max_tokens=2000)
-        else:
-            raw = await self._openai_complete(user_msg, system=system, max_tokens=2000)
+        try:
+            if resolved == "claude":
+                raw = await self._claude_complete(user_msg, system=system, max_tokens=2000)
+            else:
+                raw = await self._openai_complete(user_msg, system=system, max_tokens=2000)
+        except Exception as e:
+            raise ValueError(_friendly_error(str(e), resolved)) from e
 
         # Strip possible markdown fences before parsing
         raw = re.sub(r"^```[a-z]*\n?", "", raw.strip(), flags=re.MULTILINE)
@@ -426,12 +440,15 @@ Map the extracted text to this JSON structure (all values in same currency unit 
         from openai import AsyncOpenAI
         client = AsyncOpenAI(api_key=self.openai_key)
         content = [{"type": "text", "text": prompt}]
-        for img_bytes in image_bytes_list[:12]:
+        # Cap at 6 pages for OpenAI to stay within free-tier TPM limits.
+        # Use detail:"auto" so OpenAI picks low (~85 tokens) vs high (~1105 tokens)
+        # based on image content — financial tables rarely need full high-detail tiles.
+        for img_bytes in image_bytes_list[:6]:
             b64 = base64.standard_b64encode(img_bytes).decode("utf-8")
             mime = _detect_image_mime(img_bytes)  # Auto-detect JPEG/PNG/WebP
             content.append({
                 "type": "image_url",
-                "image_url": {"url": f"data:{mime};base64,{b64}", "detail": "high"},
+                "image_url": {"url": f"data:{mime};base64,{b64}", "detail": "auto"},
             })
         response = await client.chat.completions.create(
             model="gpt-4o",
