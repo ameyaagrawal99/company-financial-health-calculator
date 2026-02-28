@@ -34,10 +34,15 @@ export const AIKeys = {
     const h: Record<string, string> = {}
     const claude  = safeGet(CLAUDE_KEY)
     const openai  = safeGet(OPENAI_KEY)
-    const provider = safeGet(PROVIDER) || 'auto'
+    const stored  = (safeGet(PROVIDER) as AIProvider) || 'auto'
     if (claude)  h['X-Claude-Key']  = claude
     if (openai)  h['X-OpenAI-Key']  = openai
-    h['X-Provider'] = provider
+    // Smart fallback: if a specific provider is stored but its key is missing,
+    // send 'auto' so the backend picks whichever key IS available (or errors cleanly).
+    let effective: AIProvider = stored
+    if (stored === 'openai' && !openai) effective = 'auto'
+    if (stored === 'claude' && !claude) effective = 'auto'
+    h['X-Provider'] = effective
     return h
   },
 

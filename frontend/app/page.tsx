@@ -1,11 +1,18 @@
 'use client'
 import { useState, useCallback, useRef } from 'react'
+import dynamic from 'next/dynamic'
 import { useDropzone } from 'react-dropzone'
 import { useRouter } from 'next/navigation'
-import { Upload, FileSpreadsheet, AlertCircle, CheckCircle2, Loader2, Camera } from 'lucide-react'
+import { FileSpreadsheet, AlertCircle, CheckCircle2, Loader2, Camera, Settings } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { uploadFile } from '@/lib/api'
 import { AIKeys } from '@/lib/ai-keys'
+
+// Loaded client-side only (uses localStorage)
+const AISettingsModal = dynamic(() => import('@/components/chat/AISettingsModal'), { ssr: false })
+
+// File types that require an AI key to parse
+const AI_REQUIRED_EXTS = new Set(['pdf', 'jpg', 'jpeg', 'png', 'webp'])
 
 export default function HomePage() {
   const router = useRouter()
@@ -13,9 +20,18 @@ export default function HomePage() {
   const [uploadState, setUploadState] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle')
   const [errorMsg, setErrorMsg] = useState('')
   const [parsedData, setParsedData] = useState<any>(null)
+  const [showSettings, setShowSettings] = useState(false)
   const cameraInputRef = useRef<HTMLInputElement>(null)
 
   const handleFileUpload = useCallback(async (file: File) => {
+    // Pre-flight: PDF and images need an AI key — catch this early with a friendly message
+    const ext = file.name.split('.').pop()?.toLowerCase() || ''
+    if (AI_REQUIRED_EXTS.has(ext) && !AIKeys.hasAnyKey()) {
+      setUploadState('error')
+      setErrorMsg('PDF and image parsing requires an AI key. Click ⚙ AI Settings above to add your Claude or OpenAI key.')
+      return
+    }
+
     setUploadState('uploading')
     setErrorMsg('')
     try {
@@ -33,7 +49,7 @@ export default function HomePage() {
     handleFileUpload(files[0])
   }, [handleFileUpload])
 
-  const { getRootProps, getInputProps, isDragActive, acceptedFiles } = useDropzone({
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: {
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
@@ -44,27 +60,21 @@ export default function HomePage() {
       'image/png': ['.png'],
       'image/webp': ['.webp'],
     },
-    maxSize: 20 * 1024 * 1024,  // 20MB — camera RAW photos can be large
+    maxSize: 20 * 1024 * 1024,  // 20MB — camera photos can be large
     multiple: false,
   })
 
   const handleCameraCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) handleFileUpload(file)
-    // Reset input so same photo can be re-selected if needed
-    e.target.value = ''
+    e.target.value = ''  // Reset so same photo can be re-selected
   }
 
-  const handleProceedToManual = () => {
-    router.push('/upload')
-  }
+  const handleProceedToManual = () => router.push('/upload')
+  const handleProceedWithFile = () => { if (parsedData) router.push('/upload?from=file') }
 
-  const handleProceedWithFile = () => {
-    if (parsedData) {
-      // Store minimal info, go to mapping wizard
-      router.push('/upload?from=file')
-    }
-  }
+  // Whether the error is specifically a "missing key" error (so we show the Settings CTA)
+  const isMissingKeyError = errorMsg.includes('AI key') || errorMsg.includes('API key')
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -76,9 +86,21 @@ export default function HomePage() {
           </div>
           <span style={{ fontWeight: 700, fontSize: 15, color: '#1C1917' }}>FinHealth India</span>
         </div>
-        <div style={{ display: 'flex', gap: 24, fontSize: 13, color: '#6B6560' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 20, fontSize: 13, color: '#6B6560' }}>
           <a href="/dashboard" style={{ color: '#6B6560', textDecoration: 'none' }}>Dashboard</a>
           <a href="/upload" style={{ color: '#6B6560', textDecoration: 'none' }}>Manual Entry</a>
+          <button
+            onClick={() => setShowSettings(true)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              background: 'transparent', border: '1px solid #E4E2DC',
+              borderRadius: 6, padding: '5px 10px', cursor: 'pointer',
+              color: '#6B6560', fontSize: 13, fontWeight: 500,
+            }}
+          >
+            <Settings size={13} />
+            AI Settings
+          </button>
         </div>
       </nav>
 
@@ -145,8 +167,20 @@ export default function HomePage() {
               <div>
                 <AlertCircle size={40} color="#9F1239" style={{ marginBottom: 12 }} />
                 <div style={{ fontWeight: 600, color: '#9F1239', marginBottom: 8 }}>Upload failed</div>
-                <div style={{ fontSize: 13, color: '#6B6560', marginBottom: 16 }}>{errorMsg}</div>
-                <div style={{ fontSize: 12, color: '#6B6560' }}>Click to try again</div>
+                <div style={{ fontSize: 13, color: '#6B6560', marginBottom: isMissingKeyError ? 16 : 0 }}>{errorMsg}</div>
+                {isMissingKeyError && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowSettings(true) }}
+                    style={{
+                      background: '#3D5A80', color: '#fff', border: 'none', borderRadius: 7,
+                      padding: '9px 20px', fontWeight: 600, fontSize: 13, cursor: 'pointer',
+                      display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 12,
+                    }}
+                  >
+                    <Settings size={14} /> Open AI Settings
+                  </button>
+                )}
+                <div style={{ fontSize: 12, color: '#6B6560' }}>Click anywhere to try again</div>
               </div>
             )}
 
@@ -163,7 +197,13 @@ export default function HomePage() {
                   Excel, CSV, PDF · or a photo/scan of a printed statement
                 </div>
                 <p style={{ fontSize: 12, color: '#9CA3AF', margin: '4px 0 0' }}>
-                  PDF & image parsing uses AI — add your key in ⚙ AI Settings
+                  PDF & image parsing uses AI —{' '}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowSettings(true) }}
+                    style={{ background: 'none', border: 'none', padding: 0, color: '#3D5A80', fontSize: 12, cursor: 'pointer', textDecoration: 'underline', fontWeight: 600 }}
+                  >
+                    add your key in ⚙ AI Settings
+                  </button>
                 </p>
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap', marginTop: 16 }}>
                   {['Schedule III', 'Tally Export', 'Manual Excel', 'MCA XBRL', 'Camera Scan'].map(f => (
@@ -242,6 +282,9 @@ export default function HomePage() {
           ))}
         </div>
       </div>
+
+      {/* AI Settings Modal — accessible from home page without navigating away */}
+      <AISettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} />
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); }}`}</style>
     </div>
