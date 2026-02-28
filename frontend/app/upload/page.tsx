@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Loader2, ChevronDown, ChevronRight } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
@@ -116,7 +116,7 @@ function SectionPanel({ title, icon, open, onToggle, children }: any) {
   )
 }
 
-export default function UploadPage() {
+function UploadPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { statement: storedStatement, setStatement, setReport, setLoading, setError } = useAppStore()
@@ -419,5 +419,18 @@ export default function UploadPage() {
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); }}`}</style>
     </div>
+  )
+}
+
+export default function UploadPage() {
+  return (
+    <Suspense fallback={
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Loader2 size={32} color="#3D5A80" style={{ animation: 'spin 1s linear infinite' }} />
+        <style>{`@keyframes spin { to { transform: rotate(360deg); }}`}</style>
+      </div>
+    }>
+      <UploadPageInner />
+    </Suspense>
   )
 }
