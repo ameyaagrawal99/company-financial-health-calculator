@@ -2,12 +2,14 @@ from fastapi import APIRouter, UploadFile, File, Header, HTTPException
 from typing import Optional
 from ..services.excel_parser import parse_excel_file
 from ..services.pdf_parser import parse_pdf_file
+from ..services.image_parser import parse_image_file
 from ..models.schemas import ParsedFileResponse
 
 router = APIRouter(prefix="/api", tags=["upload"])
 
-ALLOWED_EXTENSIONS = {'.xlsx', '.xls', '.csv', '.pdf'}
-MAX_FILE_SIZE = 20 * 1024 * 1024  # 20MB (PDFs can be larger)
+IMAGE_EXTENSIONS  = {'.jpg', '.jpeg', '.png', '.webp'}          # Camera photos, screenshots
+ALLOWED_EXTENSIONS = {'.xlsx', '.xls', '.csv', '.pdf'} | IMAGE_EXTENSIONS
+MAX_FILE_SIZE = 20 * 1024 * 1024  # 20MB
 
 
 @router.post("/upload", response_model=ParsedFileResponse)
@@ -33,6 +35,12 @@ async def upload_file(
     try:
         if ext == '.pdf':
             result = await parse_pdf_file(
+                file_bytes, filename,
+                claude_key=x_claude_key,
+                openai_key=x_openai_key,
+            )
+        elif ext in IMAGE_EXTENSIONS:
+            result = await parse_image_file(
                 file_bytes, filename,
                 claude_key=x_claude_key,
                 openai_key=x_openai_key,

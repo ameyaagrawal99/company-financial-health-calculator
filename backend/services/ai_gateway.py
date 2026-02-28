@@ -95,6 +95,19 @@ def _friendly_error(error_msg: str, provider: str) -> str:
     return error_msg
 
 
+def _detect_image_mime(img_bytes: bytes) -> str:
+    """Detect image MIME type from magic bytes — avoids hardcoding image/png for JPEG camera photos."""
+    if img_bytes[:2] == b'\xff\xd8':
+        return 'image/jpeg'
+    if img_bytes[:4] == b'\x89PNG':
+        return 'image/png'
+    if img_bytes[:4] == b'RIFF' and img_bytes[8:12] == b'WEBP':
+        return 'image/webp'
+    if img_bytes[:4] == b'GIF8':
+        return 'image/gif'
+    return 'image/png'  # Safe fallback for PDF-converted pages
+
+
 class AIGateway:
     """Unified interface for Claude and OpenAI."""
 
@@ -357,7 +370,7 @@ Map the extracted text to this JSON structure (all values in same currency unit 
                 "type": "image",
                 "source": {
                     "type": "base64",
-                    "media_type": "image/png",
+                    "media_type": _detect_image_mime(img_bytes),  # Auto-detect JPEG/PNG/WebP
                     "data": base64.standard_b64encode(img_bytes).decode("utf-8"),
                 },
             })
@@ -415,9 +428,10 @@ Map the extracted text to this JSON structure (all values in same currency unit 
         content = [{"type": "text", "text": prompt}]
         for img_bytes in image_bytes_list[:12]:
             b64 = base64.standard_b64encode(img_bytes).decode("utf-8")
+            mime = _detect_image_mime(img_bytes)  # Auto-detect JPEG/PNG/WebP
             content.append({
                 "type": "image_url",
-                "image_url": {"url": f"data:image/png;base64,{b64}", "detail": "high"},
+                "image_url": {"url": f"data:{mime};base64,{b64}", "detail": "high"},
             })
         response = await client.chat.completions.create(
             model="gpt-4o",

@@ -1,8 +1,8 @@
 'use client'
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { useRouter } from 'next/navigation'
-import { Upload, FileSpreadsheet, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react'
+import { Upload, FileSpreadsheet, AlertCircle, CheckCircle2, Loader2, Camera } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { uploadFile } from '@/lib/api'
 import { AIKeys } from '@/lib/ai-keys'
@@ -13,13 +13,13 @@ export default function HomePage() {
   const [uploadState, setUploadState] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle')
   const [errorMsg, setErrorMsg] = useState('')
   const [parsedData, setParsedData] = useState<any>(null)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
 
-  const onDrop = useCallback(async (files: File[]) => {
-    if (!files.length) return
+  const handleFileUpload = useCallback(async (file: File) => {
     setUploadState('uploading')
     setErrorMsg('')
     try {
-      const result = await uploadFile(files[0], AIKeys.getHeaders())
+      const result = await uploadFile(file, AIKeys.getHeaders())
       setParsedData(result)
       setUploadState('success')
     } catch (err: any) {
@@ -28,6 +28,11 @@ export default function HomePage() {
     }
   }, [])
 
+  const onDrop = useCallback(async (files: File[]) => {
+    if (!files.length) return
+    handleFileUpload(files[0])
+  }, [handleFileUpload])
+
   const { getRootProps, getInputProps, isDragActive, acceptedFiles } = useDropzone({
     onDrop,
     accept: {
@@ -35,10 +40,20 @@ export default function HomePage() {
       'application/vnd.ms-excel': ['.xls'],
       'text/csv': ['.csv'],
       'application/pdf': ['.pdf'],
+      'image/jpeg': ['.jpg', '.jpeg'],
+      'image/png': ['.png'],
+      'image/webp': ['.webp'],
     },
-    maxSize: 10 * 1024 * 1024,
+    maxSize: 20 * 1024 * 1024,  // 20MB — camera RAW photos can be large
     multiple: false,
   })
+
+  const handleCameraCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) handleFileUpload(file)
+    // Reset input so same photo can be re-selected if needed
+    e.target.value = ''
+  }
 
   const handleProceedToManual = () => {
     router.push('/upload')
@@ -137,21 +152,21 @@ export default function HomePage() {
 
             {uploadState === 'idle' && (
               <>
-                <div style={{ marginBottom: 16 }}>
-                  <FileSpreadsheet size={48} color={isDragActive ? '#3D5A80' : '#6B6560'} />
+                <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'center', gap: 12 }}>
+                  <FileSpreadsheet size={40} color={isDragActive ? '#3D5A80' : '#6B6560'} />
+                  <Camera size={40} color={isDragActive ? '#3D5A80' : '#9CA3AF'} />
                 </div>
                 <div style={{ fontWeight: 600, fontSize: 16, color: '#1C1917', marginBottom: 8 }}>
                   {isDragActive ? 'Drop your file here' : 'Drop your financial statement here'}
                 </div>
                 <div style={{ fontSize: 13, color: '#6B6560', marginBottom: 4 }}>
-                  Supports .xlsx, .xls, .csv · Max 10MB · Balance Sheet, P&L, or Cash Flow
+                  Excel, CSV, PDF · or a photo/scan of a printed statement
                 </div>
-                <p className="text-xs text-gray-400 mt-1">
-                  Supports Excel (.xlsx/.xls), CSV, and PDF (digital or scanned).{' '}
-                  PDF parsing uses AI — add your API key in AI Settings.
+                <p style={{ fontSize: 12, color: '#9CA3AF', margin: '4px 0 0' }}>
+                  PDF & image parsing uses AI — add your key in ⚙ AI Settings
                 </p>
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap', marginTop: 16 }}>
-                  {['Schedule III', 'Tally Export', 'Manual Excel', 'MCA XBRL'].map(f => (
+                  {['Schedule III', 'Tally Export', 'Manual Excel', 'MCA XBRL', 'Camera Scan'].map(f => (
                     <span key={f} style={{ background: '#F8F7F4', border: '1px solid #E4E2DC', borderRadius: 6, padding: '3px 10px', fontSize: 11, color: '#6B6560' }}>
                       {f}
                     </span>
@@ -160,6 +175,42 @@ export default function HomePage() {
               </>
             )}
           </div>
+
+          {/* Hidden camera input — opens rear camera on mobile, file picker on desktop */}
+          <input
+            ref={cameraInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            style={{ display: 'none' }}
+            onChange={handleCameraCapture}
+          />
+
+          {/* Camera scan CTA — shown only when idle or error */}
+          {(uploadState === 'idle' || uploadState === 'error') && (
+            <button
+              onClick={() => cameraInputRef.current?.click()}
+              style={{
+                width: '100%',
+                marginTop: 12,
+                background: '#F8F7F4',
+                color: '#3D5A80',
+                border: '1.5px solid #E4E2DC',
+                borderRadius: 10,
+                padding: '12px 24px',
+                fontWeight: 600,
+                fontSize: 14,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+              }}
+            >
+              <Camera size={18} />
+              📷 Scan with Camera (mobile) or Upload Photo
+            </button>
+          )}
 
           {/* OR divider */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '24px 0' }}>
