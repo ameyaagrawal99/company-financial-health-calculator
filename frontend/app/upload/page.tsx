@@ -1,6 +1,6 @@
 'use client'
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Loader2, ChevronDown, ChevronRight } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { calculateFinancials } from '@/lib/api'
@@ -118,13 +118,31 @@ function SectionPanel({ title, icon, open, onToggle, children }: any) {
 
 export default function UploadPage() {
   const router = useRouter()
-  const { setStatement, setReport, setLoading, setError } = useAppStore()
+  const searchParams = useSearchParams()
+  const { statement: storedStatement, setStatement, setReport, setLoading, setError } = useAppStore()
 
   const [meta, setMeta] = useState({ company_name: '', financial_year: 'FY 2024-25', currency_unit: 'lakhs' as CurrencyUnit })
   const [bs, setBs] = useState<Partial<BalanceSheet>>({})
   const [pl, setPl] = useState<Partial<ProfitLoss>>({})
   const [cf, setCf] = useState<Partial<CashFlow>>({})
   const [comp, setComp] = useState({ roc_filed: undefined as boolean | undefined, ibc_overdue: undefined as number | undefined })
+  const [prefilledFrom, setPrefilledFrom] = useState<string | null>(null)
+
+  // When arriving from a file upload, pre-fill the form from the stored statement
+  useEffect(() => {
+    if (searchParams.get('from') === 'file' && storedStatement) {
+      setMeta({
+        company_name: storedStatement.company_name || '',
+        financial_year: storedStatement.financial_year || 'FY 2024-25',
+        currency_unit: (storedStatement.currency_unit || 'lakhs') as CurrencyUnit,
+      })
+      setBs((storedStatement.balance_sheet as Partial<BalanceSheet>) || {})
+      setPl((storedStatement.profit_loss as Partial<ProfitLoss>) || {})
+      setCf((storedStatement.cash_flow as Partial<CashFlow>) || {})
+      setPrefilledFrom(storedStatement.company_name || 'your uploaded file')
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // run once on mount
 
   const [openSections, setOpenSections] = useState<Record<Section, boolean>>({
     meta: true,
@@ -201,6 +219,21 @@ export default function UploadPage() {
         </p>
       </div>
 
+      {/* Pre-filled banner */}
+      {prefilledFrom && (
+        <div style={{
+          marginBottom: 20, padding: '12px 16px',
+          background: '#F0FDF4', border: '1px solid #86EFAC', borderRadius: 10,
+          display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: '#166534',
+        }}>
+          <span style={{ fontSize: 18 }}>✅</span>
+          <div>
+            <strong>Pre-filled from PDF</strong> — fields extracted from <em>{prefilledFrom}</em>.
+            Review the values below, correct anything that looks wrong, then click Calculate.
+          </div>
+        </div>
+      )}
+
       {/* Meta */}
       <SectionPanel title="Company Information" icon="🏢" open={openSections.meta} onToggle={() => toggle('meta')}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
@@ -220,7 +253,11 @@ export default function UploadPage() {
               onChange={e => setMeta(p => ({ ...p, financial_year: e.target.value }))}
               style={{ width: '100%', padding: '8px 12px', border: '1px solid #E4E2DC', borderRadius: 8, fontSize: 14, color: '#1C1917', background: '#fff' }}
             >
-              {['FY 2024-25', 'FY 2023-24', 'FY 2022-23', 'FY 2021-22', 'FY 2020-21'].map(fy => (
+              {(
+                // Include detected year at top if not in standard list
+                [meta.financial_year, 'FY 2024-25', 'FY 2023-24', 'FY 2022-23', 'FY 2021-22', 'FY 2020-21']
+                  .filter((fy, i, arr) => arr.indexOf(fy) === i) // deduplicate
+              ).map(fy => (
                 <option key={fy} value={fy}>{fy}</option>
               ))}
             </select>

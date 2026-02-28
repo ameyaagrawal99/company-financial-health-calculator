@@ -71,7 +71,22 @@ export default function HomePage() {
   }
 
   const handleProceedToManual = () => router.push('/upload')
-  const handleProceedWithFile = () => { if (parsedData) router.push('/upload?from=file') }
+  const handleProceedWithFile = () => {
+    if (!parsedData) return
+    // Save parsed statement to Zustand so /upload can pre-fill the form
+    const ps = parsedData.parsed_statement
+    if (ps) {
+      setStatement({
+        company_name: ps.company_name || '',
+        financial_year: ps.financial_year || 'FY 2024-25',
+        currency_unit: (ps.currency_unit || 'lakhs') as any,
+        balance_sheet: ps.balance_sheet,
+        profit_loss: ps.profit_loss,
+        cash_flow: ps.cash_flow,
+      })
+    }
+    router.push('/upload?from=file')
+  }
 
   // Whether the error is specifically a "missing key" error (so we show the Settings CTA)
   const isMissingKeyError = errorMsg.includes('AI key') || errorMsg.includes('API key')
@@ -154,7 +169,7 @@ export default function HomePage() {
                   </div>
                 </div>
                 <button
-                  onClick={handleProceedWithFile}
+                  onClick={(e) => { e.stopPropagation(); handleProceedWithFile() }}
                   style={{ width: '100%', background: '#3D5A80', color: '#fff', border: 'none', borderRadius: 8, padding: '12px 24px', fontWeight: 600, fontSize: 14, cursor: 'pointer', marginBottom: 8 }}
                 >
                   Review Mapping & Calculate →
