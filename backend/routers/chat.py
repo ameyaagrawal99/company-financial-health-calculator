@@ -7,7 +7,7 @@ from fastapi.responses import StreamingResponse
 
 from ..models.schemas import ChatRequest
 from ..services.ai_gateway import AIGateway
-from ..services.calculator import calculate_all_ratios
+from .calculate import build_report
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
@@ -17,7 +17,7 @@ async def _event_generator(gateway: AIGateway, request: ChatRequest):
     report = None
     if request.statement:
         try:
-            report = calculate_all_ratios(request.statement)
+            report = build_report(request.statement)
         except Exception:  # noqa: BLE001 — bad statement data, chat continues without it
             report = None
 
@@ -26,6 +26,7 @@ async def _event_generator(gateway: AIGateway, request: ChatRequest):
             messages=request.messages,
             report=report,
             provider=request.provider,
+            raw_text=request.raw_text,
         ):
             payload = json.dumps({"text": chunk, "done": False})
             yield f"data: {payload}\n\n"

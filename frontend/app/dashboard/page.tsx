@@ -7,9 +7,9 @@ import HealthScoreWidget from '@/components/dashboard/HealthScoreWidget'
 import SectionCard from '@/components/dashboard/SectionCard'
 import { formatCurrency, formatPct, formatX, formatDays } from '@/lib/formatters'
 import { FinancialHealthReport } from '@/lib/types'
-import { exportExcel, triggerDownload, getAIAnalysis } from '@/lib/api'
+import { exportExcel, triggerDownload, getAIAnalysis, getLawymanQA } from '@/lib/api'
 import { AIKeys } from '@/lib/ai-keys'
-import { Download, FileSpreadsheet, RefreshCw, Sparkles, X, Key, ChevronDown, ChevronUp, Settings } from 'lucide-react'
+import { Download, FileSpreadsheet, RefreshCw, Sparkles, X, ChevronDown, ChevronUp, Settings, MessageSquare } from 'lucide-react'
 
 const ChatPanel = dynamic(() => import('@/components/chat/ChatPanel'), { ssr: false })
 const AISettingsModal = dynamic(() => import('@/components/chat/AISettingsModal'), { ssr: false })
@@ -147,9 +147,23 @@ function AnalysisText({ text }: { text: string }) {
   )
 }
 
+// Maps AI-returned question text → emoji prefix for the accordion
+const LAYMAN_ICONS: Record<string, string> = {
+  'Is this business profitable enough?': '🏆',
+  'Is this company ready for a bank loan?': '🏦',
+  'Is the company spending too much?': '💸',
+  'Are customers paying on time?': '⏱️',
+  'Is inventory being managed well?': '📦',
+  'Can the company pay its bills this month?': '💧',
+  'Is the business growing or declining?': '📈',
+  'What is the biggest financial risk right now?': '🔥',
+  'Would an investor or partner find this company attractive?': '🤝',
+  'Is this business at risk of serious financial trouble?': '🚨',
+}
+
 export default function DashboardPage() {
   const router = useRouter()
-  const { report, statement, isLoading } = useAppStore() as any
+  const { report, statement, rawText, isLoading } = useAppStore() as any
   const [exporting, setExporting] = useState(false)
 
   // AI state
@@ -158,12 +172,19 @@ export default function DashboardPage() {
   const [aiResult, setAiResult] = useState<string | null>(null)
   const [aiError, setAiError] = useState<string | null>(null)
   const [aiTokens, setAiTokens] = useState<number | null>(null)
-  const [showKeyInput, setShowKeyInput] = useState(false)
-  const [apiKey, setApiKey] = useState('')
 
   // CFO Chat + AI Settings
   const [showChat, setShowChat] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+
+  // Per-card AI prefill
+  const [chatPrefill, setChatPrefill] = useState('')
+
+  // Layman Q&A state
+  const [laymanQA, setLaymanQA] = useState<Array<{ question: string; answer: string }>>([])
+  const [laymanLoading, setLaymanLoading] = useState(false)
+  const [laymanError, setLaymanError] = useState<string | null>(null)
+  const [laymanExpandedIdx, setLaymanExpandedIdx] = useState<number | null>(null)
 
   const handleExport = async () => {
     if (!statement) return
@@ -181,11 +202,9 @@ export default function DashboardPage() {
 
   const handleAIAnalysis = async () => {
     if (!statement) return
-    // Check for key from input or localStorage
-    const key = apiKey || (typeof window !== 'undefined' ? localStorage.getItem('openai_key') || '' : '')
-    if (!key) {
-      setShowKeyInput(true)
-      setAiOpen(true)
+    // Use AIKeys — the single source of truth (stored as fin_health_openai_key / fin_health_claude_key)
+    if (!AIKeys.hasAnyKey()) {
+      setShowSettings(true)
       return
     }
     setAiOpen(true)
@@ -193,12 +212,10 @@ export default function DashboardPage() {
     setAiResult(null)
     setAiError(null)
     try {
-      if (typeof window !== 'undefined') localStorage.setItem('openai_key', key)
       const res = await getAIAnalysis(statement, AIKeys.getHeaders())
       if (res.available && res.analysis) {
         setAiResult(res.analysis)
         setAiTokens(res.tokens_used || null)
-        setShowKeyInput(false)
       } else {
         setAiError(res.error || 'Analysis unavailable')
       }
@@ -209,13 +226,24 @@ export default function DashboardPage() {
     }
   }
 
-  // Load saved key on mount
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('openai_key')
-      if (saved) setApiKey(saved)
+  const handleLaymanQA = async () => {
+    if (!statement) return
+    if (!AIKeys.hasAnyKey()) {
+      setShowSettings(true)
+      return
     }
-  }, [])
+    setLaymanLoading(true)
+    setLaymanError(null)
+    setLaymanQA([])
+    try {
+      const qa = await getLawymanQA(statement, AIKeys.getHeaders())
+      setLaymanQA(qa)
+    } catch (err: any) {
+      setLaymanError(err.message)
+    } finally {
+      setLaymanLoading(false)
+    }
+  }
 
   if (!report) {
     return (
@@ -316,41 +344,14 @@ export default function DashboardPage() {
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               {aiTokens && <span style={{ fontSize: 11, color: '#DDD6FE' }}>{aiTokens.toLocaleString()} tokens used</span>}
-              <button onClick={() => setShowKeyInput(v => !v)} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 6, padding: '6px 10px', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
-                <Key size={12} /> API Key
+              <button onClick={() => setShowSettings(true)} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 6, padding: '6px 10px', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
+                <Settings size={12} /> Settings
               </button>
               <button onClick={() => setAiOpen(false)} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 6, padding: '6px 8px', color: '#fff', cursor: 'pointer' }}>
                 <X size={14} />
               </button>
             </div>
           </div>
-
-          {/* Key input */}
-          {showKeyInput && (
-            <div style={{ padding: '16px 24px', background: '#F5F3FF', borderBottom: '1px solid #DDD6FE' }}>
-              <div style={{ fontSize: 13, color: '#5B21B6', fontWeight: 600, marginBottom: 8 }}>
-                🔑 Enter your OpenAI API Key
-              </div>
-              <div style={{ fontSize: 12, color: '#7C3AED', marginBottom: 10 }}>
-                Your key is stored only in your browser (localStorage) and sent directly to the backend. It is never stored on our servers. Get a key at <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener" style={{ color: '#6366F1' }}>platform.openai.com</a>.
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <input
-                  type="password"
-                  placeholder="sk-..."
-                  value={apiKey}
-                  onChange={e => setApiKey(e.target.value)}
-                  style={{ flex: 1, padding: '8px 12px', border: '1px solid #C4B5FD', borderRadius: 8, fontSize: 13, fontFamily: 'monospace' }}
-                />
-                <button
-                  onClick={handleAIAnalysis}
-                  style={{ padding: '8px 20px', background: '#6366F1', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}
-                >
-                  Analyze →
-                </button>
-              </div>
-            </div>
-          )}
 
           {/* Content */}
           <div style={{ padding: '24px', background: '#FAFAF9', minHeight: 120 }}>
@@ -366,8 +367,8 @@ export default function DashboardPage() {
                 <strong>Error:</strong> {aiError}
                 {aiError.includes('API key') && (
                   <div style={{ marginTop: 8 }}>
-                    <button onClick={() => setShowKeyInput(true)} style={{ fontSize: 12, color: '#6366F1', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
-                      Enter API key →
+                    <button onClick={() => setShowSettings(true)} style={{ fontSize: 12, color: '#6366F1', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
+                      Open AI Settings →
                     </button>
                   </div>
                 )}
@@ -376,21 +377,138 @@ export default function DashboardPage() {
             {aiResult && !aiLoading && (
               <AnalysisText text={aiResult} />
             )}
-            {!aiLoading && !aiError && !aiResult && !showKeyInput && (
+            {!aiLoading && !aiError && !aiResult && (
               <div style={{ textAlign: 'center', padding: '30px 0', color: '#8B5CF6' }}>
                 <Sparkles size={32} style={{ marginBottom: 8 }} />
-                <div style={{ fontSize: 14 }}>Click "Analyze →" after entering your API key above</div>
+                <div style={{ fontSize: 14 }}>Analysis running — results will appear here shortly</div>
               </div>
             )}
           </div>
         </div>
       )}
 
-      {/* 9 Section Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
-        {sections.map(s => (
-          <SectionCard key={s.title} {...s} />
-        ))}
+      {/* 9 Section Cards — each has an Ask AI button that pre-fills the chat */}
+      {(() => {
+        const sectionQuestions: Record<string, string> = {
+          'Income & Profitability': 'Explain the profitability metrics for this company. Are the margins healthy compared to industry norms?',
+          'Expenditure Analysis': 'Analyse the cost structure. Is the company spending efficiently? What is the largest cost driver?',
+          'Cash Flow': 'How is the cash flow position? Can the company sustain operations and fund growth from its own cash?',
+          'Receivables & Debtors': 'Is the company collecting payments from customers fast enough? Any debtor concentration risk?',
+          'Payables & Creditors': 'Is the company managing its supplier payments well? Any risk of payable stress?',
+          'Debt & Loans': 'Is this company ready for a bank loan? Explain the debt position and interest coverage.',
+          'Liquidity & Working Capital': 'Can the company pay its short-term bills? Is working capital healthy and sustainable?',
+          'Efficiency Ratios': 'How efficiently is the company using its assets and inventory? Are there inefficiency red flags?',
+          'Indian Compliance': 'What are the compliance risks? Any GST, TDS, PF/ESI or MSME overdue issues I should know about?',
+        }
+        return (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+            {sections.map(s => (
+              <SectionCard
+                key={s.title}
+                {...s}
+                onAskAI={() => {
+                  setChatPrefill(sectionQuestions[s.title] || `Tell me about ${s.title} for this company.`)
+                  setShowChat(true)
+                }}
+              />
+            ))}
+          </div>
+        )
+      })()}
+
+      {/* ── Business Health Check — Layman Q&A ─────────────────── */}
+      <div style={{ marginTop: 24, border: '1px solid #5EEAD4', borderRadius: 14, overflow: 'hidden', boxShadow: '0 2px 16px rgba(20,184,166,0.10)' }}>
+        {/* Header */}
+        <div style={{ background: 'linear-gradient(135deg, #0D9488, #0891B2)', padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 22 }}>💬</span>
+            <div>
+              <div style={{ color: '#fff', fontWeight: 700, fontSize: 15 }}>Business Health Check</div>
+              <div style={{ color: '#99F6E4', fontSize: 12 }}>10 plain-English answers · No finance jargon · For founders &amp; directors</div>
+            </div>
+          </div>
+          <button
+            onClick={handleLaymanQA}
+            disabled={laymanLoading}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              background: laymanLoading ? 'rgba(255,255,255,0.18)' : '#fff',
+              color: laymanLoading ? '#e2e8f0' : '#0D9488',
+              border: '2px solid rgba(255,255,255,0.4)',
+              borderRadius: 8, padding: '8px 18px',
+              fontWeight: 700, fontSize: 13,
+              cursor: laymanLoading ? 'not-allowed' : 'pointer',
+              flexShrink: 0,
+            }}
+          >
+            {laymanLoading
+              ? <><RefreshCw size={14} className="animate-spin" />&nbsp;Generating…</>
+              : laymanQA.length > 0
+                ? <>🔄 Regenerate</>
+                : <>✨ Generate Answers</>
+            }
+          </button>
+        </div>
+
+        {/* Body — appears after first click */}
+        {(laymanLoading || laymanQA.length > 0 || !!laymanError) && (
+          <div style={{ background: '#F0FDFA', padding: '20px 24px' }}>
+            {laymanLoading && (
+              <div style={{ textAlign: 'center', padding: '36px 0' }}>
+                <div style={{ fontSize: 32, marginBottom: 12 }}>🤔</div>
+                <div style={{ fontSize: 15, fontWeight: 600, color: '#0D9488', marginBottom: 6 }}>AI is reviewing your financials…</div>
+                <div style={{ fontSize: 13, color: '#0891B2' }}>Preparing plain-English answers to 10 business health questions. This takes ~10 seconds.</div>
+              </div>
+            )}
+            {laymanError && !laymanLoading && (
+              <div style={{ padding: '14px 16px', background: '#FFF1F2', border: '1px solid #FECDD3', borderRadius: 8, color: '#9F1239', fontSize: 13 }}>
+                <strong>Error:</strong> {laymanError}
+                {laymanError.toLowerCase().includes('key') && (
+                  <div style={{ marginTop: 8 }}>
+                    <button onClick={() => setShowSettings(true)} style={{ fontSize: 12, color: '#0D9488', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
+                      Open AI Settings →
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+            {laymanQA.length > 0 && !laymanLoading && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {laymanQA.map((item, idx) => {
+                  const isOpen = laymanExpandedIdx === idx
+                  const icon = LAYMAN_ICONS[item.question] ?? '💡'
+                  return (
+                    <div
+                      key={idx}
+                      style={{
+                        border: `1px solid ${isOpen ? '#5EEAD4' : '#CCFBF1'}`,
+                        borderRadius: 10,
+                        overflow: 'hidden',
+                        background: isOpen ? '#fff' : '#F9FFFE',
+                      }}
+                    >
+                      <button
+                        onClick={() => setLaymanExpandedIdx(isOpen ? null : idx)}
+                        style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', padding: '12px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}
+                      >
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 600, fontSize: 14, color: '#134E4A' }}>
+                          <span style={{ fontSize: 18, lineHeight: 1, flexShrink: 0 }}>{icon}</span>
+                          {item.question}
+                        </span>
+                        <span style={{ color: '#0D9488', flexShrink: 0, fontSize: 11, fontWeight: 700 }}>{isOpen ? '▲' : '▼'}</span>
+                      </button>
+                      {isOpen && (
+                        <div style={{ padding: '4px 16px 14px 46px', fontSize: 13, color: '#1C4A47', lineHeight: 1.75 }}>
+                          {item.answer}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* AI CTA */}
@@ -435,6 +553,8 @@ export default function DashboardPage() {
             statement={statement}
             companyName={report?.company_name ?? ''}
             financialYear={report?.financial_year ?? ''}
+            rawText={rawText ?? undefined}
+            initialMessage={chatPrefill}
           />
         </div>
       )}

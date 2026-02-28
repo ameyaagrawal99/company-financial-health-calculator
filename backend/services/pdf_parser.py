@@ -129,6 +129,7 @@ async def parse_pdf_file(
     schema_data["_parse_method"] = parse_method
     schema_data["_fields_found"] = fields_found
     schema_data["_page_count"] = page_count if extraction_method == "digital" else None
+    schema_data["_raw_text"] = extracted_text  # Preserved for full-document chat context
 
     # Confidence: higher if we parsed all 3 sections; lower if AI fallback used
     base_confidence = 0.90 if parse_method == "regex" and fields_found >= 10 else 0.80
@@ -143,4 +144,5 @@ async def parse_pdf_file(
         "financial_year": schema_data.get("financial_year"),
         "currency_unit": schema_data.get("currency_unit", "lakhs"),
         "parsed_statement": schema_data,
+        "raw_text": schema_data.get("_raw_text", ""),
     }

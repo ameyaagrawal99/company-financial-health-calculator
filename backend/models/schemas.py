@@ -214,6 +214,7 @@ class ParsedFileResponse(BaseModel):
     financial_year: Optional[str] = None
     currency_unit: Optional[str] = None
     parsed_statement: Optional[Dict[str, Any]] = None
+    raw_text: Optional[str] = None
 
 
 class ChatMessage(BaseModel):
@@ -225,3 +226,4 @@ class ChatRequest(BaseModel):
     messages: List[ChatMessage]
     statement: Optional[FinancialStatement] = None
     provider: str = "auto"   # "auto" | "claude" | "openai"
+    raw_text: Optional[str] = None

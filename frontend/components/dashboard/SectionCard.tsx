@@ -13,9 +13,10 @@ interface SectionCardProps {
   metrics: HeroMetric[]
   overallStatus: 'Good' | 'Watch' | 'Critical' | 'N/A'
   href: string
+  onAskAI?: () => void
 }
 
-export default function SectionCard({ title, icon, metrics, overallStatus, href }: SectionCardProps) {
+export default function SectionCard({ title, icon, metrics, overallStatus, href, onAskAI }: SectionCardProps) {
   const statusColors = STATUS_COLORS[overallStatus] || STATUS_COLORS['N/A']
 
   return (
@@ -65,9 +66,22 @@ export default function SectionCard({ title, icon, metrics, overallStatus, href 
           })}
         </div>
 
-        {/* View details link */}
-        <div style={{ marginTop: 14, fontSize: 12, color: '#3D5A80', fontWeight: 600, textAlign: 'right' }}>
-          View Details →
+        {/* Footer: View details + Ask AI */}
+        <div style={{ marginTop: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          {onAskAI ? (
+            <button
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onAskAI() }}
+              style={{
+                fontSize: 11, color: '#6366F1', background: '#EEF2FF',
+                border: '1px solid #C7D2FE', borderRadius: 6,
+                padding: '3px 8px', cursor: 'pointer', fontWeight: 600,
+                display: 'flex', alignItems: 'center', gap: 4,
+              }}
+            >
+              💬 Ask AI
+            </button>
+          ) : <span />}
+          <span style={{ fontSize: 12, color: '#3D5A80', fontWeight: 600 }}>View Details →</span>
         </div>
       </div>
     </a>

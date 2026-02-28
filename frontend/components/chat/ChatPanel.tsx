@@ -17,6 +17,8 @@ interface Props {
   statement?: FinancialStatement
   companyName: string
   financialYear: string
+  rawText?: string
+  initialMessage?: string
 }
 
 const STARTER_QUESTIONS = [
@@ -27,7 +29,7 @@ const STARTER_QUESTIONS = [
   'Is this company ready for a bank loan?',
 ]
 
-export default function ChatPanel({ statement, companyName, financialYear }: Props) {
+export default function ChatPanel({ statement, companyName, financialYear, rawText, initialMessage }: Props) {
   const store = useChatStore()
   const messages = store.getMessages()
 
@@ -41,6 +43,14 @@ export default function ChatPanel({ statement, companyName, financialYear }: Pro
   useEffect(() => {
     store.setActiveCompany(companyName, financialYear)
   }, [companyName, financialYear])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Pre-fill textarea when a parent component pushes an initialMessage (e.g. per-card Ask AI)
+  useEffect(() => {
+    if (initialMessage) {
+      setInput(initialMessage)
+      textareaRef.current?.focus()
+    }
+  }, [initialMessage])
 
   // Auto-scroll on new messages
   useEffect(() => {
@@ -83,6 +93,7 @@ export default function ChatPanel({ statement, companyName, financialYear }: Pro
         .filter(m => m.id !== assistantId)
         .map(m => ({ role: m.role, content: m.content })),
       statement: statement as Record<string, unknown> | undefined,
+      rawText,
       aiHeaders: AIKeys.getHeaders(),
       signal: controller.signal,
       onChunk: (chunk) => {

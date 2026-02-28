@@ -58,6 +58,7 @@ async def upload_file(
             financial_year=result.get("financial_year"),
             currency_unit=result.get("currency_unit"),
             parsed_statement=result.get("parsed_statement"),
+            raw_text=result.get("raw_text", ""),
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))

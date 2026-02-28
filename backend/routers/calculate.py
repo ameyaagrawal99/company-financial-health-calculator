@@ -10,12 +10,13 @@ from ..services.compliance_checker import check_compliance
 from ..services.recommender import generate_recommendations
 from ..services.excel_exporter import export_to_excel
 from ..services.ai_analyst import generate_ai_analysis
+from ..services.ai_gateway import AIGateway
 
 router = APIRouter(prefix="/api", tags=["calculate"])
 
 
-def _build_report(stmt: FinancialStatement) -> FinancialHealthReport:
-    """Common helper to build a FinancialHealthReport from a statement."""
+def build_report(stmt: FinancialStatement) -> FinancialHealthReport:
+    """Build a FinancialHealthReport from a FinancialStatement. Exported for use by other routers."""
     ratios = calculate_all_ratios(stmt)
     compliance = check_compliance(stmt)
     health_score, sub_scores = calculate_health_score(ratios, compliance)
@@ -73,7 +74,7 @@ def _build_report(stmt: FinancialStatement) -> FinancialHealthReport:
 async def calculate(stmt: FinancialStatement):
     """Main calculation endpoint — computes all ratios, score, and recommendations."""
     try:
-        return _build_report(stmt)
+        return build_report(stmt)
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"Calculation error: {str(e)}")
 
@@ -82,7 +83,7 @@ async def calculate(stmt: FinancialStatement):
 async def export_excel(stmt: FinancialStatement):
     """Export full report as Excel with formulas, color coding, and formatting."""
     try:
-        report = _build_report(stmt)
+        report = build_report(stmt)
         excel_bytes = export_to_excel(report, stmt)
         filename = f"Financial_Health_{(stmt.company_name or 'Report').replace(' ', '_')}_{stmt.financial_year or 'FY2425'}.xlsx"
 
@@ -109,7 +110,7 @@ async def ai_analysis(
     in X-Provider header (openai | claude | auto). Falls back to env vars.
     """
     try:
-        report = _build_report(stmt)
+        report = build_report(stmt)
         result = await generate_ai_analysis(
             report,
             claude_key=x_claude_key,
@@ -119,3 +120,30 @@ async def ai_analysis(
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI analysis error: {str(e)}")
+
+
+@router.post("/layman-qa")
+async def layman_qa(
+    stmt: FinancialStatement,
+    x_openai_key: Optional[str] = Header(default=None),
+    x_claude_key: Optional[str] = Header(default=None),
+    x_provider: Optional[str] = Header(default="auto"),
+):
+    """
+    Answer 10 plain-English business health questions for non-finance users.
+    Returns a list of {question, answer} objects.
+    """
+    if not x_claude_key and not x_openai_key:
+        raise HTTPException(
+            status_code=400,
+            detail="No API key provided. Set X-Claude-Key or X-OpenAI-Key header.",
+        )
+    try:
+        report = build_report(stmt)
+        gateway = AIGateway(claude_key=x_claude_key, openai_key=x_openai_key)
+        qa_list = await gateway.generate_layman_qa(report, provider=x_provider or "auto")
+        return {"qa": qa_list}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Layman Q&A error: {str(e)}")

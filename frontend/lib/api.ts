@@ -85,6 +85,7 @@ export async function getAIAnalysis(
 export interface ChatStreamOptions {
   messages: Array<{ role: 'user' | 'assistant'; content: string }>
   statement?: FinancialStatement
+  rawText?: string
   aiHeaders: Record<string, string>
   onChunk: (text: string) => void
   onDone: () => void
@@ -93,7 +94,7 @@ export interface ChatStreamOptions {
 }
 
 export async function streamChat(options: ChatStreamOptions): Promise<void> {
-  const { messages, statement, aiHeaders, onChunk, onDone, onError, signal } = options
+  const { messages, statement, rawText, aiHeaders, onChunk, onDone, onError, signal } = options
 
   const res = await fetch(`${API_URL}/api/chat`, {
     method: 'POST',
@@ -102,6 +103,7 @@ export async function streamChat(options: ChatStreamOptions): Promise<void> {
       messages,
       statement: statement ?? null,
       provider: aiHeaders['X-Provider'] || 'auto',
+      raw_text: rawText ?? null,
     }),
     signal,
   })
@@ -142,4 +144,26 @@ export async function streamChat(options: ChatStreamOptions): Promise<void> {
     }
   }
   onDone()
+}
+
+export interface LaymanQAItem {
+  question: string
+  answer: string
+}
+
+export async function getLawymanQA(
+  stmt: FinancialStatement,
+  aiHeaders: Record<string, string> = {}
+): Promise<LaymanQAItem[]> {
+  const res = await fetch(`${API_URL}/api/layman-qa`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...aiHeaders },
+    body: JSON.stringify(stmt),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Layman Q&A failed' }))
+    throw new Error(err.detail || 'Layman Q&A failed')
+  }
+  const data = await res.json()
+  return data.qa as LaymanQAItem[]
 }

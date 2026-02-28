@@ -16,7 +16,7 @@ const AI_REQUIRED_EXTS = new Set(['pdf', 'jpg', 'jpeg', 'png', 'webp'])
 
 export default function HomePage() {
   const router = useRouter()
-  const { setStatement } = useAppStore()
+  const { setStatement, setRawText } = useAppStore()
   const [uploadState, setUploadState] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle')
   const [errorMsg, setErrorMsg] = useState('')
   const [parsedData, setParsedData] = useState<any>(null)
@@ -85,6 +85,8 @@ export default function HomePage() {
         cash_flow: ps.cash_flow,
       })
     }
+    // Persist raw PDF text so the CFO chat can reference MD&A, auditor notes, etc.
+    setRawText(parsedData.raw_text || null)
     router.push('/upload?from=file')
   }
 

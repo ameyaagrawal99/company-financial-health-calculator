@@ -173,6 +173,49 @@ class AIGateway:
             }
 
     # ------------------------------------------------------------------ #
+    #  Public: Layman Q&A                                                  #
+    # ------------------------------------------------------------------ #
+
+    async def generate_layman_qa(
+        self,
+        report: FinancialHealthReport,
+        provider: str = "auto",
+    ) -> list[dict]:
+        """Answer 10 plain-English business health questions in a single API call.
+        Returns a list of {question, answer} dicts."""
+        try:
+            resolved = _resolve_provider(provider, self.claude_key, self.openai_key)
+        except ValueError as e:
+            raise ValueError(str(e)) from e
+
+        system = _load_skill("layman_qa")
+        financial_data = build_financial_context(report)
+        user_msg = (
+            f"Here are the financial metrics for {report.company_name} ({report.financial_year}):\n\n"
+            f"{financial_data}\n\n"
+            "Now answer all 10 questions in the JSON format specified."
+        )
+
+        try:
+            if resolved == "claude":
+                raw = await self._claude_complete(user_msg, system=system, max_tokens=2500)
+            else:
+                raw = await self._openai_complete(user_msg, system=system, max_tokens=2500)
+        except Exception as e:
+            raise ValueError(_friendly_error(str(e), resolved)) from e
+
+        # Strip possible markdown fences before parsing
+        raw = re.sub(r"^```[a-z]*\n?", "", raw.strip(), flags=re.MULTILINE)
+        raw = re.sub(r"\n?```$", "", raw.strip(), flags=re.MULTILINE)
+        try:
+            result = json.loads(raw.strip())
+            if isinstance(result, list):
+                return result
+            raise ValueError("Expected a JSON array")
+        except (json.JSONDecodeError, ValueError) as exc:
+            raise ValueError(f"AI returned invalid JSON for layman Q&A: {exc}") from exc
+
+    # ------------------------------------------------------------------ #
     #  Public: Streaming Chat                                              #
     # ------------------------------------------------------------------ #
 
@@ -181,6 +224,7 @@ class AIGateway:
         messages: list[ChatMessage],
         report: Optional[FinancialHealthReport] = None,
         provider: str = "auto",
+        raw_text: Optional[str] = None,
     ) -> AsyncIterator[str]:
         """Yield text chunks for streaming chat. Each chunk is a plain string."""
         try:
@@ -200,6 +244,15 @@ class AIGateway:
             system = skill_template.replace("{COMPANY_NAME}", "the company")
             system = system.replace("{FINANCIAL_YEAR}", "the current financial year")
             system = system.replace("{FINANCIAL_DATA}", "No financial data uploaded yet.")
+
+        # Append raw PDF text excerpt so the AI can answer questions about MD&A,
+        # auditor remarks, risk factors etc. that don't appear in ratio tables.
+        if raw_text and raw_text.strip():
+            excerpt = raw_text.strip()[:3000]
+            system += (
+                "\n\n---\nADDITIONAL DOCUMENT CONTEXT (from original PDF — first 3000 chars)\n"
+                f"{excerpt}\n---"
+            )
 
         api_messages = [{"role": m.role, "content": m.content} for m in messages]
 
